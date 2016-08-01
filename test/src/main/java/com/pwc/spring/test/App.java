@@ -1,5 +1,7 @@
 package com.pwc.spring.test;
 
+import java.net.URISyntaxException;
+
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
@@ -19,5 +21,11 @@ public class App
         System.out.println(fs.getUserList());
         SfRestService sfR=context.getBean("sfRestService",SfRestService.class);
         sfR.GetOauthToken();
+        try {
+			sfR.getDataFromSalesforce();
+		} catch (URISyntaxException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
     }
 }
