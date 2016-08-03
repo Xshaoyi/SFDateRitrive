@@ -3,7 +3,11 @@ package com.pwc.spring.test.service;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
@@ -19,8 +23,14 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
+import com.pwc.spring.test.model.GeoWrapper;
 import com.pwc.spring.test.thread.SingleThreadExecutingService;
 import com.pwc.spring.test.thread.TaskResult;
+
+import redis.clients.jedis.GeoCoordinate;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
 
 public class SfRestService {
 	private static final String ACCESS_TOKEN = "ACCESS_TOKEN";
@@ -37,7 +47,7 @@ public class SfRestService {
 	private String instanceUrl;
 	private String loginAccessToken = null;
 	private String loginInstanceUrl = null;
-
+	LinkedBlockingQueue<GeoWrapper> geoWrappers= new LinkedBlockingQueue<GeoWrapper>(1000);
 	public void GetOauthToken() {
 		HttpClient httpclient = HttpClientBuilder.create().build();
 
@@ -124,6 +134,7 @@ public class SfRestService {
 //			JSONObject jo = (JSONObject) o;
 //			System.out.println(jo.toString());
 //		}
+		
 
 	}
 
@@ -144,6 +155,26 @@ public class SfRestService {
 		// System.out.println(getResult);
 
 	}
+	JedisPool pool = new JedisPool(new JedisPoolConfig(), "192.168.186.128");
+	public void uploadDataToRedis(){
+		ExecutorService ex = Executors.newFixedThreadPool(1);
+		while(true){
+			ex.submit(new Runnable() {
+				
+				public void run() {
+					// TODO Auto-generated method stub
+					try  {
+						Jedis jedis = pool.getResource();
+						GeoWrapper geo=geoWrappers.take();
+						jedis.geoadd("samsgeo", geo.getGeoCoordinate().getLongitude(), geo.getGeoCoordinate().getLatitude(), geo.getName());
+						System.out.println("upload success name:"+geo.getName());
+						jedis.close();
+					}catch(Exception e){
+						e.printStackTrace();			}
+				}
+			});
+		}
+	}
 	private class Task<T> implements Callable<T>{
 		private String path ;
 		private HttpClient httpclient;
@@ -154,7 +185,7 @@ public class SfRestService {
 		public T call() throws Exception {
 			// TODO Auto-generated method stub
 			String url = loginInstanceUrl + path;
-			URI uri = new URIBuilder(url).addParameter("q", "select id,name from lead").build();
+			URI uri = new URIBuilder(url).addParameter("q", "select id,name,Lead_Geo_Location__Latitude__s,Lead_Geo_Location__Longitude__s from lead where Lead_Geo_Location__Latitude__s!=null").build();
 			HttpGet get = new HttpGet(uri);
 			get.addHeader("Content-Type", "application/json");
 			get.addHeader("Authorization", "Bearer " + loginAccessToken);
@@ -182,9 +213,13 @@ public class SfRestService {
 			String nextQuery = jsonObject.getString("nextRecordsUrl");
 			TaskResult tr = new TaskResult(isDone, nextQuery);
 			JSONArray recordArray = jsonObject.getJSONArray("records");
+			System.out.println(recordArray.toString());
 			for (Object o : recordArray) {
 				JSONObject jo = (JSONObject) o;
-				System.out.println(jo.toString());
+				GeoWrapper gewGeoWrapper = new GeoWrapper(jo.getString("Name"),
+						jo.getDouble("Lead_Geo_Location__Longitude__s"),
+						jo.getDouble("Lead_Geo_Location__Longitude__s"));
+				geoWrappers.put(gewGeoWrapper);
 			}
 			return (T) tr;
 		}
