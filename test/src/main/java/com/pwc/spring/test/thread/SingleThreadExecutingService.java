@@ -23,4 +23,5 @@ public class SingleThreadExecutingService<T> {
 			return result;
 		}
 	}
+
 }
